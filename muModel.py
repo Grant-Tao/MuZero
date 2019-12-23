@@ -148,7 +148,6 @@ class Nets(nn.Module):
 
 import torch.optim as optim
 
-
 batch_size = 256
 num_epochs = 10
 num_steps = 8000
@@ -187,16 +186,15 @@ def gen_target(games):
     return batchdata
 
 
-
 def train(games, nets=Nets()):
     '''Train neural nets'''
     optimizer = optim.SGD(nets.parameters(), lr=1e-3, weight_decay=1e-4, momentum=0.75)
     for epoch in range(num_epochs):
         p_loss_sum, v_loss_sum = 0, 0
         nets.train()
-        for i in range(num_steps):
-            k = 4#np.random.randint(4)
-            x, ax, p_target, v_target = zip(*[gen_target(episodes[np.random.randint(len(episodes))], k) for j in range(batch_size)])
+        for i in range(num_steps) :
+            batchdata = gen_batch(games)
+            x, ax, p_target, v_target = zip(batchdata)
             x = torch.from_numpy(np.array(x))
             ax = torch.from_numpy(np.array(ax))
             p_target = torch.from_numpy(np.array(p_target))
@@ -214,7 +212,7 @@ def train(games, nets=Nets()):
                 rp = nets.representation(x) if t == 0 else nets.dynamics(rp, ax[t - 1])
                 p, v = nets.prediction(rp)
                 p_loss += torch.sum(-p_target[t] * torch.log(p))
-                v_loss += torch.sum((v_target[t] - v) ** 2)
+                v_loss += torch.sum((v_target[t] - v) * (v_target[t] - v))
 
             p_loss_sum += p_loss.item()
             v_loss_sum += v_loss.item()
@@ -223,7 +221,5 @@ def train(games, nets=Nets()):
             (p_loss + v_loss).backward()
             optimizer.step()
 
-        for param_group in optimizer.param_groups:
-            param_group['lr'] *= 0.85
-    print('p_loss %f v_loss %f' % (p_loss_sum / len(episodes), v_loss_sum / len(episodes)))
+    print('p_loss %f v_loss %f' % (p_loss_sum / num_steps*batch_size, v_loss_sum / num_steps*batch_size)
     return nets
