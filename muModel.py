@@ -148,38 +148,53 @@ class Nets(nn.Module):
 
 import torch.optim as optim
 
-batch_size = 32
-num_epochs = 30
 
-def gen_target(ep, k):
+batch_size = 256
+num_epochs = 10
+num_steps = 8000
+FK = 5
+def gen_target(games):
     '''Generate inputs and targets for training'''
     # path, reward, observation, action, policy
-    turn_idx = np.random.randint(len(ep[0]))
-    ps, vs, ax = [], [], []
-    for t in range(turn_idx, turn_idx + k + 1):
-        if t < len(ep[0]):
-            p = ep[4][t]
-            a = ep[3][t]
-        else: # state after finishing game
-            # p is 0 (loss is 0)
-            p = np.zeros_like(ep[4][-1])
-            # random action selection
-            a = np.zeros(np.prod(ep[3][-1].shape), dtype=np.float32)
-            a[np.random.randint(len(a))] = 1
-            a = a.reshape(ep[3][-1].shape)
-        vs.append([ep[1] if t % 2 == 0 else -ep[1]])
-        ps.append(p)
-        ax.append(a)
+    batch_idx = np.random.randint(0, len(games), batch_size)
+    batchdata = []
+    for i in range(batch_size): 
+        game = games[batch_idx[i]]
+        s0 = np.random.randint(len(game)-FK)
+        state0 = np.zeros(18, 361).astype(np.uint8)
+        actions = np.zeros(FK, 362).astype(np.int16)
+        probs = np.zeros(FK+1, 362).astype(np.float32)
+        winners = np.zeros(FK+1, 1).astype(np.float32)
+        for j in range(8) :
+            k = s0 - j
+            if k < 0:
+                k=0
+            state0[2*j][0:361] = game[k][0]
+            state0[2*j+1][0:361] = game[k][1]
+            stm = game[s0][2]
+            if stm == 0:  #black to move
+                state0[16][0:361] = 1
+            else :
+                state0[17][0:361] = 1
+        for j in range(FK+1) :
+            probs[j][0:362] = game[s0+j][4]
+            winners[j][0]   = game[s0+j][5]
+            if j < FK :
+                action = game[s0+j][3]
+                actions[j][action] = 1
+        batchdata.append((state0, actions, probs, winners))
         
-    return ep[2][turn_idx], ax, ps, vs
+    return batchdata
 
-def train(episodes, nets=Nets()):
+
+
+def train(games, nets=Nets()):
     '''Train neural nets'''
     optimizer = optim.SGD(nets.parameters(), lr=1e-3, weight_decay=1e-4, momentum=0.75)
     for epoch in range(num_epochs):
         p_loss_sum, v_loss_sum = 0, 0
         nets.train()
-        for i in range(0, len(episodes), batch_size):
+        for i in range(num_steps):
             k = 4#np.random.randint(4)
             x, ax, p_target, v_target = zip(*[gen_target(episodes[np.random.randint(len(episodes))], k) for j in range(batch_size)])
             x = torch.from_numpy(np.array(x))
